@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Mobile Field Capture</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+header {
+  background: #111;
+  padding: 10px;
+  z-index: 100;
+  border-bottom: 2px solid #222;
+}
+
+.header-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+  align-items: center;
+}
+
+input, select, button {
+  padding: 8px 12px;
+  font-size: 13px;
+  border: none;
+  border-radius: 4px;
+  background: #333;
+  color: #fff;
+  cursor: pointer;
+}
+
+input {
+  background: #222;
+  border: 1px solid #444;
+}
+
+input:focus, select:focus {
+  outline: none;
+  background: #333;
+}
+
+button {
+  background: #007bff;
+  transition: 0.2s;
+}
+
+button:hover {
+  background: #0056b3;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+.status-bar {
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  padding: 5px;
+  font-size: 12px;
+  background: #0a0a0a;
+  border-top: 1px solid #222;
+}
+
+.status-item {
+  padding: 3px 8px;
+  background: #1a1a1a;
+  border-radius: 3px;
+  margin: 2px;
+}
+
+#video-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  position: relative;
+  overflow: hidden;
+}
+
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+#canvas {
+  display: none;
+}
+
+.button-container {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 15px;
+  z-index: 200;
+}
+
+#photoBtn {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: red;
+  border: 4px solid white;
+  color: white;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+#videoBtn {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #ff6b00;
+  border: 4px solid white;
+  color: white;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+
+.modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.9);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.show {
+  display: flex;
+}
+
+.modal-content {
+  background: #1a1a1a;
+  padding: 30px;
+  border-radius: 10px;
+  max-width: 90%;
+  text-align: center;
+  border: 2px solid #444;
+}
+
+.modal-content h2 {
+  margin-bottom: 15px;
+  color: #fff;
+}
+
+.modal-content p {
+  margin: 10px 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.modal-buttons button {
+  padding: 12px 24px;
+  font-size: 14px;
+}
+
+.success { color: #28a745; }
+.error { color: #dc3545; }
+.warning { color: #ffc107; }
+
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="header-content">
+    <input id="siteId" placeholder="Site ID" style="width: 120px;">
+    <select id="type">
+      <option value="ID">ID</option>
+      <option value="OD">OD</option>
+    </select>
+    <button onclick="requestCameraAccess()">🎥 Allow Camera</button>
+    <button onclick="startCamera()">▶ Start</button>
+    <button onclick="exportZip()">📦 Export</button>
+  </div>
+  <div class="status-bar">
+    <div class="status-item" id="gps">📍 GPS: -</div>
+    <div class="status-item" id="counter">📸 0 | 🎥 0</div>
+  </div>
+</header>
+
+<div id="video-container">
+  <video id="video" playsinline muted></video>
+</div>
+
+<div class="button-container">
+  <button id="photoBtn">PHOTO</button>
+  <button id="videoBtn">REC</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<!-- Permission Modal -->
+<div id="permissionModal" class="modal">
+  <div class="modal-content">
+    <h2>📱 Camera Permission Required</h2>
+    <p>This app needs access to your camera and microphone to work.</p>
+    <p style="font-size: 12px; color: #aaa;">You will be prompted to allow camera and microphone access.</p>
+    <div class="modal-buttons">
+      <button onclick="requestCameraAccessForce()">✓ Allow Camera</button>
+      <button onclick="closePermissionModal()">✗ Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+
+let stream = null;
+let photos = [];
+let videos = [];
+let photoCount = 1;
+let videoCount = 1;
+let gps = "Unknown";
+
+let mediaRecorder = null;
+let recording = false;
+let chunks = [];
+
+function showPermissionModal() {
+  document.getElementById('permissionModal').classList.add('show');
+}
+
+function closePermissionModal() {
+  document.getElementById('permissionModal').classList.remove('show');
+}
+
+async function requestCameraAccess() {
+  showPermissionModal();
+}
+
+async function requestCameraAccessForce() {
+  closePermissionModal();
+  
+  try {
+    const constraints = {
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: true
+    };
+    
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    
+    // Start GPS after camera is successful
+    startGPS();
+    
+    console.log('✓ Camera access granted');
+    
+  } catch (error) {
+    console.error('Camera error:', error);
+    alert('Camera access failed: ' + error.message + '\n\nMake sure to allow camera permission when prompted.');
+  }
+}
+
+function startCamera() {
+  if (!stream) {
+    alert('Please click "Allow Camera" first');
+    return;
+  }
+  const video = document.getElementById('video');
+  video.play();
+}
+
+function startGPS() {
+  if (!navigator.geolocation) {
+    document.getElementById('gps').innerText = '📍 GPS: Not supported';
+    return;
+  }
+
+  navigator.geolocation.watchPosition(
+    (position) => {
+      const lat = position.coords.latitude.toFixed(6);
+      const lon = position.coords.longitude.toFixed(6);
+      gps = lat + ',' + lon;
+      document.getElementById('gps').innerText = '📍 GPS: ' + gps;
+    },
+    (error) => {
+      document.getElementById('gps').innerText = '📍 GPS: Error';
+      console.log('GPS error:', error);
+    },
+    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+  );
+}
+
+function takePhoto() {
+  if (!stream) {
+    alert('Camera not started');
+    return;
+  }
+
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  if (canvas.width === 0 || canvas.height === 0) {
+    alert('Video stream not ready');
+    return;
+  }
+
+  ctx.drawImage(video, 0, 0);
+
+  canvas.toBlob((blob) => {
+    const type = document.getElementById('type').value;
+    const name = type + '_photo_' + photoCount + '.jpg';
+    
+    photos.push({
+      name: name,
+      blob: blob,
+      gps: gps,
+      time: new Date().toISOString()
+    });
+
+    photoCount++;
+    updateCounter();
+    console.log('✓ Photo captured: ' + name);
+    
+  }, 'image/jpeg', 0.9);
+}
+
+function toggleVideo() {
+  if (!stream) {
+    alert('Camera not started');
+    return;
+  }
+
+  if (!recording) {
+    chunks = [];
+    
+    try {
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm'
+      });
+
+      mediaRecorder.ondataavailable = (e) => {
+        chunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = saveVideo;
+      mediaRecorder.start();
+
+      document.getElementById('videoBtn').innerText = '⏹ STOP';
+      recording = true;
+      console.log('✓ Recording started');
+      
+    } catch (error) {
+      alert('Recording error: ' + error.message);
+    }
+
+  } else {
+    mediaRecorder.stop();
+    document.getElementById('videoBtn').innerText = '⏺ REC';
+    recording = false;
+  }
+}
+
+function saveVideo() {
+  const blob = new Blob(chunks, { type: 'video/webm' });
+  const type = document.getElementById('type').value;
+  const name = type + '_video_' + videoCount + '.webm';
+
+  videos.push({
+    name: name,
+    blob: blob,
+    gps: gps,
+    time: new Date().toISOString()
+  });
+
+  videoCount++;
+  updateCounter();
+  console.log('✓ Video saved: ' + name);
+}
+
+function updateCounter() {
+  document.getElementById('counter').innerText = '📸 ' + photos.length + ' | 🎥 ' + videos.length;
+}
+
+function exportZip() {
+  const site = document.getElementById('siteId').value;
+
+  if (!site) {
+    alert('Enter Site ID');
+    return;
+  }
+
+  if (photos.length === 0 && videos.length === 0) {
+    alert('No photos or videos to export');
+    return;
+  }
+
+  const zip = new JSZip();
+  const folder = zip.folder(site);
+
+  let report = 'SITE ID: ' + site + '\n';
+  report += 'Exported: ' + new Date().toISOString() + '\n\n';
+
+  photos.forEach((p) => {
+    folder.file(p.name, p.blob);
+    report += p.name + ' | GPS: ' + p.gps + ' | ' + p.time + '\n';
+  });
+
+  videos.forEach((v) => {
+    folder.file(v.name, v.blob);
+    report += v.name + ' | GPS: ' + v.gps + ' | ' + v.time + '\n';
+  });
+
+  folder.file('report.txt', report);
+
+  zip.generateAsync({ type: 'blob' }).then((blob) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = site + '_package.zip';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    console.log('✓ ZIP exported');
+  });
+}
+
+document.getElementById('photoBtn').onclick = takePhoto;
+document.getElementById('videoBtn').onclick = toggleVideo;
+
+// Show permission modal on load
+window.addEventListener('load', () => {
+  console.log('App loaded - requesting camera access');
+  showPermissionModal();
+});
+
+</script>
+
+</body>
+</html>
